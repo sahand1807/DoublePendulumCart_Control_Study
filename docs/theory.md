@@ -29,3 +29,22 @@ Here are the key facts about the dynamics of the system and the control strategi
     -  LQR: Linearization around upright equilibrium.  
     - MPC: Nonlinear MPC formulation via CasADi using receding horizon.  
     - PPO: Model-free RL agent trained in MuJoCo environment, with reward shaping to stabilize in the upright position.  
+
+---    
+In the follwoing sections we will investigate the dynamics of the system in detail, overview the set-up for the simulation environment and will study the theoretical foundation of the various control and reinforcement learning strategies that are implemented in this project.
+
+## 1. System Definition
+The double pendulum on a cart consists of a cart of mass M that moves horizontally, 
+with two pendulums (m₁, m₂) attached via rotary joints. The control input u is the horizontal force on the cart.
+
+**State Vector**
+State vector consists of 6 variables as follows:
+$x = [x_{cart}, θ₁, θ₂, ẋ_{cart}, θ̇₁, θ̇₂]ᵀ$
+
+**Control Input**
+The horizontal force applied on the cart:
+$u = [F]$
+
+**Objective**
+Stabilize both pendulums in the upright position and track reference trajectories when needed.
+
