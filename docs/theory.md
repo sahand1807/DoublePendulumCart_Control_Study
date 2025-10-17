@@ -433,6 +433,22 @@ $$
 
 where \( \text{wrap}(\theta) \) maps angles to \( [-\pi, \pi] \).
 
+Using the default weighting matrices, the LQR controller produces the following optimal gain:
+
+$$
+K = \begin{bmatrix}
+-3.16 & -16.87 & 2.84 & -4.42 & -0.51 & -3.74
+\end{bmatrix}
+$$
+
+The closed-loop eigenvalues are:
+
+$$
+\lambda = \{-5.34 \pm 3.80i,\, -0.88 \pm 0.87i,\, -0.05 \pm 5.00i\}
+$$
+
+All eigenvalues have negative real parts, confirming asymptotic stability of the closed-loop system.
+
 ---
 
 ### 5.6 Limitations and Region of Attraction

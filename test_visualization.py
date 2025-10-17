@@ -99,11 +99,12 @@ def test_with_zero_control():
     axes[0].set_title('Free Fall Dynamics from Upright (No Control)')
     axes[0].axhline(y=0, color='k', linestyle='--', alpha=0.3)
     
-    # Plot angles (absolute convention)
-    axes[1].plot(time_steps, states[:, 1], label='θ₁ (first pendulum)', color='red')
-    axes[1].plot(time_steps, states[:, 2], label='θ₂ (second pendulum)', color='green')
+    # Plot angles (absolute convention) - WRAPPED to [0, 2π]
+    axes[1].plot(time_steps, np.mod(states[:, 1], 2*np.pi), label='θ₁ (first pendulum)', color='red')
+    axes[1].plot(time_steps, np.mod(states[:, 2], 2*np.pi), label='θ₂ (second pendulum)', color='blue')
     axes[1].axhline(y=np.pi, color='b', linestyle='--', alpha=0.5, label='Upright (π)')
     axes[1].axhline(y=0, color='gray', linestyle='--', alpha=0.3, label='Hanging (0)')
+    axes[1].axhline(y=2*np.pi, color='gray', linestyle='--', alpha=0.2, label='2π')
     axes[1].set_ylabel('Angle (rad)')
     axes[1].legend()
     axes[1].grid(True)
@@ -169,13 +170,14 @@ def test_with_random_control():
     axes[0].axhline(y=0, color='k', linestyle='--', alpha=0.3)
     axes[0].legend()
     
-    # Plot angles
-    axes[1].plot(time_steps, states[:, 1], label='θ₁', color='red')
-    axes[1].plot(time_steps, states[:, 2], label='θ₂', color='green')
+    # Plot angles - WRAPPED to [0, 2π]
+    axes[1].plot(time_steps, np.mod(states[:, 1], 2*np.pi), label='θ₁', color='red')
+    axes[1].plot(time_steps, np.mod(states[:, 2], 2*np.pi), label='θ₂', color='blue')
     axes[1].axhline(y=np.pi, color='b', linestyle='--', alpha=0.5, label='Upright (π)')
     axes[1].set_ylabel('Angles (rad)')
     axes[1].legend()
     axes[1].grid(True)
+    axes[1].set_ylim(-0.5, 2*np.pi + 0.5)
     
     # Plot control action
     axes[2].plot(time_steps[:-1], actions * 20.0)  # Scale to actual force
@@ -207,6 +209,9 @@ def animate_pendulum():
     print("=" * 60)
     
     env = DoublePendulumCartEnv()
+    
+    # FIXED: Get actual dt from environment
+    dt = env.dt * env.frame_skip  # 0.01 * 1 = 0.01 seconds
     
     # Start near upright
     initial_state = np.array([0.0, np.pi + 0.3, np.pi - 0.2, 0.0, 0.0, 0.0])
@@ -252,12 +257,16 @@ def animate_pendulum():
                                fc='steelblue', ec='black', linewidth=2, alpha=0.8)
     ax.add_patch(cart_patch)
     
+    # First rod and blob: RED with darker face
     line1, = ax.plot([], [], 'o-', color='red', linewidth=4, markersize=10, 
                      markerfacecolor='darkred', label='Link 1')
-    line2, = ax.plot([], [], 'o-', color='green', linewidth=4, markersize=10,
-                     markerfacecolor='darkgreen', label='Link 2')
-    tip_marker, = ax.plot([], [], 'o', color='gold', markersize=15, 
-                         markeredgecolor='orange', markeredgewidth=2)
+    
+    # Second rod and blob: BLUE with darker face
+    line2, = ax.plot([], [], 'o-', color='blue', linewidth=4, markersize=10,
+                     markerfacecolor='darkblue', label='Link 2')
+    
+    # Remove yellow tip marker (invisible)
+    tip_marker, = ax.plot([], [], 'o', color='none', markersize=0)
     
     time_text = ax.text(0.02, 0.98, '', transform=ax.transAxes, fontsize=11,
                        verticalalignment='top',
@@ -291,8 +300,8 @@ def animate_pendulum():
         line2.set_data([x1, x2], [y1, y2])
         tip_marker.set_data([x2], [y2])
         
-        # Calculate time and energy
-        t = frame * 0.01 * 5  # timestep * frame_skip
+        # FIXED: Calculate time using correct dt
+        t = frame * dt
         
         time_text.set_text(
             f'Time: {t:.2f}s | Frame: {frame}/{len(states)-1}\n'

@@ -68,7 +68,7 @@ def get_state_from_mujoco(data):
 mujoco.mj_resetData(model, data)
 
 # Set initial state - small perturbation from upright
-theta1_abs = np.pi + 0.35
+theta1_abs = np.pi + np.pi/9
 theta2_abs = np.pi + 0.1
 
 # Convert to MuJoCo convention
