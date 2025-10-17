@@ -17,15 +17,6 @@ from controllers.lqr_controller import create_lqr_controller
 print("=" * 60)
 print("LQR Controller with 3D MuJoCo Viewer")
 print("=" * 60)
-print("\n🖱️  Controls:")
-print("  - Left drag: Rotate camera")
-print("  - Right drag: Pan camera")
-print("  - Scroll: Zoom")
-print("  - ESC: Close viewer")
-print("\n📊 Live display shows:")
-print("  - State (angles, velocities)")
-print("  - Control force applied")
-print("  - Real-time 3D animation")
 print("=" * 60)
 
 # Load model
@@ -35,12 +26,12 @@ data = mujoco.MjData(model)
 # Create LQR controller
 print("\nInitializing LQR controller...")
 controller = create_lqr_controller()
-print("✓ Controller ready!")
+print("  Controller ready!")
 
 # Get max force from model (should be 20N based on ctrlrange)
 actuator_id = 0
 max_force = model.actuator_ctrlrange[actuator_id, 1]  # Should be 20
-print(f"✓ Max force from model: ±{max_force}N")
+print(f"  Max force from model: ±{max_force}N")
 
 def mujoco_to_absolute_angles(qpos):
     """Convert MuJoCo angles (relative) to absolute angles."""
@@ -68,8 +59,8 @@ def get_state_from_mujoco(data):
 mujoco.mj_resetData(model, data)
 
 # Set initial state - small perturbation from upright
-theta1_abs = np.pi + np.pi/9
-theta2_abs = np.pi + 0.1
+theta1_abs = np.pi + np.pi/10
+theta2_abs = np.pi + np.pi/12
 
 # Convert to MuJoCo convention
 data.qpos[0] = 0.0  # cart at center
@@ -86,12 +77,12 @@ print(f"  θ₂ = {np.degrees(theta2_abs):.2f}° (upright = 180°)")
 print(f"\nStarting LQR control...\n")
 
 # Create viewer
-viewer = mujoco_viewer.MujocoViewer(model, data)
+viewer = mujoco_viewer.MujocoViewer(model, data, hide_menus=True)
 
 # Configure camera for better view
-viewer.cam.azimuth = 90      # Side view
+viewer.cam.azimuth = -90      # Side view
 viewer.cam.elevation = -15   # Slightly from above
-viewer.cam.distance = 3.5    # Distance from target (zoom out)
+viewer.cam.distance = 8    # Distance from target (zoom out)
 viewer.cam.lookat[0] = 0.0   # Look at x=0
 viewer.cam.lookat[1] = 0.0   # Look at y=0
 viewer.cam.lookat[2] = 0.3   # Look at z=0.3 (center of system)
@@ -154,7 +145,7 @@ while viewer.is_alive:
         # If we've been within threshold for the full window, mark as settled
         if settled_counter >= settling_window and settled_time is None:
             settled_time = (step - settling_window + 1) * dt
-            print(f"\n🎯 STABILIZED at t={settled_time:.2f}s!")
+            print(f"\n STABILIZED at t={settled_time:.2f}s!")
             print(f"   (Both angles stayed within ±{np.degrees(settling_threshold):.1f}° for {settling_window * dt:.1f}s)")
     else:
         # Outside threshold - reset counter
@@ -168,7 +159,7 @@ while viewer.is_alive:
         theta1_error_deg = abs(np.degrees(theta1) - 180)
         theta2_error_deg = abs(np.degrees(theta2) - 180)
         
-        status = "✓ SETTLED" if settled_time is not None else f"settling... ({settled_counter}/{settling_window})"
+        status = "SETTLED" if settled_time is not None else f"settling... ({settled_counter}/{settling_window})"
         
         print(f"t={t:5.2f}s: "
               f"θ₁={np.degrees(theta1):6.2f}° (err={theta1_error_deg:5.2f}°), "
@@ -198,13 +189,13 @@ print(f"  Saturation events: {saturation_count}/{step} steps ({100*saturation_co
 
 print(f"\nStabilization:")
 if settled_time is not None:
-    print(f"  ✓ Settling time: {settled_time:.2f}s")
+    print(f"    Settling time: {settled_time:.2f}s")
     print(f"    (Time until both angles stayed within ±{np.degrees(settling_threshold):.1f}°")
     print(f"     for {settling_window} consecutive steps = {settling_window * dt:.1f}s)")
 else:
-    print(f"  ✗ Did not settle within threshold")
+    print(f"    Did not settle within threshold")
     print(f"    (Both angles must stay within ±{np.degrees(settling_threshold):.1f}° for {settling_window * dt:.1f}s)")
 
 print("=" * 60)
-print("✓ Viewer closed")
+print(" Viewer closed")
 print("=" * 60)
