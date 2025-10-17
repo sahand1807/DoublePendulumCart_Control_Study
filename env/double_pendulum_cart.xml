@@ -18,11 +18,11 @@
     <!-- Lighting -->
     <light directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" pos="0 0 4" dir="0 0 -1"/>
     
-    <!-- Simple rail track (visual only, no collision) -->
+    <!-- Simple rail track (visual only) -->
     <geom name="rail" type="box" size="2.5 0.03 0.02" pos="0 0 0.5" 
           rgba="0.2 0.2 0.2 1" contype="0" conaffinity="0"/>
     
-    <!-- Track limits (visual markers) -->
+    <!-- Track limits -->
     <geom name="limit_left" type="box" size="0.03 0.05 0.06" pos="-2.5 0 0.5" 
           rgba="0.8 0.2 0.2 0.7" contype="0" conaffinity="0"/>
     <geom name="limit_right" type="box" size="0.03 0.05 0.06" pos="2.5 0 0.5" 
@@ -30,35 +30,23 @@
     
     <!-- Cart (M_cart = 1.0 kg) -->
     <body name="cart" pos="0 0 0.5">
-      <joint name="slider" type="slide" axis="1 0 0" limited="true" range="-2 2" damping="1" ref="0"/>
-      
-      <!-- Cart body: mass = 1.0 kg -->
+      <joint name="slider" type="slide" axis="1 0 0" limited="true" range="-2 2" damping="1"/>
       <geom name="cart_body" type="box" size="0.2 0.15 0.08" rgba="0.3 0.5 0.8 1"/>
       <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
       
-      <!-- First Pendulum (m1=0.3kg, l1=0.5m, lc1=0.25m, I1=0.01) -->
+      <!-- First Pendulum: theta1 is absolute angle from vertical -->
       <body name="pole1" pos="0 0 0.08">
-        <joint name="hinge1" type="hinge" axis="0 1 0" limited="false" damping="0.05" ref="0.1"/>
-        
-        <!-- Rod from pivot to end (length l1=0.5m) -->
+        <joint name="hinge1" type="hinge" axis="0 1 0" limited="false" damping="0.05"/>
         <geom name="pole1_rod" type="capsule" fromto="0 0 0 0 0 -0.5" 
               size="0.025" rgba="0.9 0.3 0.3 1" contype="0" conaffinity="0"/>
-        
-        <!-- Mass center at lc1=0.25m from pivot, total mass m1=0.3kg, inertia I1=0.01 -->
         <inertial pos="0 0 -0.25" mass="0.3" diaginertia="0.01 0.01 0.0001"/>
         
-        <!-- Second Pendulum (m2=0.2kg, l2=0.4m, lc2=0.2m, I2=0.008) -->
+        <!-- Second Pendulum: attached to pole1, so angle is RELATIVE -->
         <body name="pole2" pos="0 0 -0.5">
-          <joint name="hinge2" type="hinge" axis="0 1 0" limited="false" damping="0.05" ref="0.05"/>
-          
-          <!-- Rod from joint to end (length l2=0.4m) -->
+          <joint name="hinge2" type="hinge" axis="0 1 0" limited="false" damping="0.05"/>
           <geom name="pole2_rod" type="capsule" fromto="0 0 0 0 0 -0.4" 
                 size="0.02" rgba="0.3 0.9 0.3 1" contype="0" conaffinity="0"/>
-          
-          <!-- Mass center at lc2=0.2m from joint, total mass m2=0.2kg, inertia I2=0.008 -->
           <inertial pos="0 0 -0.2" mass="0.2" diaginertia="0.008 0.008 0.0001"/>
-          
-          <!-- Visual tip marker -->
           <geom name="tip" type="sphere" pos="0 0 -0.4" size="0.04" 
                 rgba="0.95 0.85 0.1 1" contype="0" conaffinity="0" mass="0"/>
         </body>
@@ -69,10 +57,6 @@
   <actuator>
     <motor joint="slider" gear="100" ctrllimited="true" ctrlrange="-20 20"/>
   </actuator>
-  
-  <keyframe>
-    <key name="upright_perturbed" qpos="0 0.1 0.05" qvel="0 0 0"/>
-  </keyframe>
   
   <sensor>
     <jointpos name="cart_pos" joint="slider"/>

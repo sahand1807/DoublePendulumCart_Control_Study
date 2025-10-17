@@ -293,6 +293,175 @@ $$
 6. This linearized model provides the foundation for designing **LQR and MPC controllers**, and serves as a comparison benchmark for reinforcement learning approaches.
 
 
+## 5. Linear Quadratic Regulator (LQR)
+
+### 5.1 Problem Formulation
+
+For the linearized system around the upright equilibrium:
+
+$$
+\dot{x} = A x + B u
+$$
+
+where the state vector is:
+
+$$
+x = \begin{bmatrix}
+x \\ \theta_1 \\ \theta_2 \\ \dot{x} \\ \dot{\theta}_1 \\ \dot{\theta}_2
+\end{bmatrix}
+$$
+
+The LQR problem seeks to find the control input \( u(t) \) that minimizes the infinite-horizon quadratic cost function:
+
+$$
+J = \int_0^\infty \left( x^T Q x + u^T R u \right) dt
+$$
+
+where:
+- \( Q \in \mathbb{R}^{6 \times 6} \) is a positive semi-definite state weighting matrix
+- \( R \in \mathbb{R}^{1 \times 1} \) is a positive definite control weighting matrix
+
+The matrix \( Q \) penalizes deviations of the state from the equilibrium, while \( R \) penalizes control effort (large forces on the cart).
+
+---
+
+### 5.2 Optimal Control Law
+
+The optimal control law that minimizes the cost function \( J \) is given by the linear state feedback:
+
+$$
+u^*(t) = -K x(t)
+$$
+
+where \( K \in \mathbb{R}^{1 \times 6} \) is the optimal feedback gain matrix computed as:
+
+$$
+K = R^{-1} B^T P
+$$
+
+The matrix \( P \in \mathbb{R}^{6 \times 6} \) is the unique positive definite solution to the **Continuous-time Algebraic Riccati Equation (ARE)**:
+
+$$
+A^T P + P A - P B R^{-1} B^T P + Q = 0
+$$
+
+---
+
+### 5.3 Closed-Loop Stability
+
+With the optimal control \( u = -Kx \), the closed-loop system becomes:
+
+$$
+\dot{x} = (A - BK) x
+$$
+
+The LQR solution guarantees that:
+1. The matrix \( (A - BK) \) is **Hurwitz** (all eigenvalues have negative real parts)
+2. The closed-loop system is **asymptotically stable**
+3. All states converge to the equilibrium: \( x(t) \to 0 \) as \( t \to \infty \)
+
+The Lyapunov function:
+
+$$
+V(x) = x^T P x
+$$
+
+satisfies \( \dot{V} < 0 \) for all \( x \neq 0 \), proving stability.
+
+---
+
+### 5.4 Design Choices: Q and R Matrices
+
+The weighting matrices \( Q \) and \( R \) must be chosen to reflect the control objectives and physical constraints.
+
+#### State Weighting Matrix Q
+
+For our double pendulum cart system, we choose \( Q \) as a diagonal matrix:
+
+$$
+Q = \text{diag}(q_x, q_{\theta_1}, q_{\theta_2}, q_{\dot{x}}, q_{\dot{\theta}_1}, q_{\dot{\theta}_2})
+$$
+
+**Design rationale**:
+- **Large weights on angles** \( q_{\theta_1} \) and \( q_{\theta_2} \): The primary objective is to keep both pendulums upright. These should be the largest weights.
+- **Moderate weight on cart position** \( q_x \): We want the cart to stay near the center, but this is secondary to balancing.
+- **Small weights on velocities**: Penalize rapid motions, but less critical than position errors.
+
+**Typical values**:
+$$
+Q = \text{diag}(10, 100, 100, 1, 10, 10)
+$$
+
+#### Control Weighting Matrix R
+
+The scalar \( R \) penalizes control effort:
+
+$$
+R = r > 0
+$$
+
+**Design rationale**:
+- **Larger R**: More conservative control, smaller forces, slower response
+- **Smaller R**: Aggressive control, larger forces, faster response
+- In this study we consider balancing performance with an imaginary actuator limit (\( |u| \leq 20 \) N)
+
+**Typical value**:
+$$
+R = 1
+$$
+
+This choice allows sufficient control authority while avoiding excessive force.
+
+---
+
+### 5.5 Implementation Procedure
+
+The LQR controller is implemented using the following steps:
+
+1. **Linearize** the nonlinear dynamics around the upright equilibrium to obtain \( A \) and \( B \)
+2. **Verify controllability** by checking that \( \text{rank}(\mathcal{C}) = 6 \)
+3. **Choose** weighting matrices \( Q \) and \( R \) based on control objectives
+4. **Solve the ARE** using numerical methods (e.g., `scipy.linalg.solve_continuous_are`)
+5. **Compute the gain** \( K = R^{-1} B^T P \)
+6. **Apply control** \( u = -K(x - x_{\text{eq}}) \) where \( x_{\text{eq}} = [0, \pi, \pi, 0, 0, 0]^T \)
+
+**Note on angle wrapping**: Since the equilibrium angles are \( \theta_{eq} = \pi \), the control error must account for angle wrapping:
+
+$$
+e_{\theta} = \text{wrap}(\theta - \pi)
+$$
+
+where \( \text{wrap}(\theta) \) maps angles to \( [-\pi, \pi] \).
+
+---
+
+### 5.6 Limitations and Region of Attraction
+
+The LQR controller is designed based on the **linearized** system, which is only valid near the equilibrium point. 
+
+**Key limitations**:
+
+1. **Local stability only**: The controller is guaranteed to work only for **small deviations** from upright. For large initial angles, the linearization is invalid and performance degrades.
+
+2. **No constraint handling**: LQR does not explicitly handle state or input constraints. If the optimal control exceeds actuator limits, it must be saturated, which can degrade performance.
+
+3. **Model-based**: Requires accurate knowledge of system parameters. Parameter uncertainty or modeling errors can affect performance.
+
+4. **Region of attraction**: The domain in which LQR successfully stabilizes the system must be determined experimentally.
+
+---
+
+### 5.7 Performance Metrics
+
+To evaluate the LQR controller, we use the following metrics:
+
+1. **Settling time** \( t_s \): Time for \( \|\theta - \pi\| < 0.05 \) rad (≈3°)
+2. **Maximum overshoot**: Peak deviation during transient response
+3. **Control effort**: \( E = \int_0^T u^2 dt \)
+4. **Computation time**: Time per control step (should be < 1 ms for real-time feasibility)
+5. **Success rate**: Percentage of initial conditions that converge to equilibrium
+
+
 
 
 
