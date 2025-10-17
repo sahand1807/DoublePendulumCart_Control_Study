@@ -77,7 +77,7 @@ class DoublePendulumCartEnv(gym.Env):
         
         # Simulation parameters
         self.dt = self.model.opt.timestep
-        self.frame_skip = 5
+        self.frame_skip = 1  # CRITICAL: Reduce frame skip for better control
         
         # Episode parameters
         self.max_episode_steps = 2000  # Longer episodes to see full dynamics
@@ -248,23 +248,21 @@ class DoublePendulumCartEnv(gym.Env):
         """Check if episode should terminate."""
         x, theta1, theta2 = obs[0], obs[1], obs[2]
         
-        # Terminate if cart goes out of bounds
+        # Always terminate if cart goes out of bounds
         if abs(x) > self.x_limit:
             return True
         
-        # For visualization/testing: allow full rotation, don't terminate on angles
-        # For control tasks: uncomment the angle checks below
-        
-        # Terminate if pendulums fall too far from upright (optional)
-        # theta1_error = abs(theta1 - np.pi)
-        # theta2_error = abs(theta2 - np.pi)
-        # 
-        # # Wrap errors to [0, π]
-        # theta1_error = min(theta1_error, 2*np.pi - theta1_error)
-        # theta2_error = min(theta2_error, 2*np.pi - theta2_error)
-        # 
-        # if theta1_error > np.pi/2 or theta2_error > np.pi/2:
-        #     return True
+        # Optionally terminate on large angle deviations (for control tasks)
+        if self.terminate_on_fall:
+            theta1_error = abs(theta1 - np.pi)
+            theta2_error = abs(theta2 - np.pi)
+            
+            # Wrap errors to [0, π]
+            theta1_error = min(theta1_error, 2*np.pi - theta1_error)
+            theta2_error = min(theta2_error, 2*np.pi - theta2_error)
+            
+            if theta1_error > np.pi/2 or theta2_error > np.pi/2:
+                return True
         
         return False
     

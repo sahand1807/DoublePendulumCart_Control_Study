@@ -167,13 +167,11 @@ class ModelBasedController(BaseController):
         assert self.B.shape[0] == self.A.shape[0], "B must match A dimensions"
         
         # Check controllability
-        from scipy.linalg import matrix_rank
-        
         C = self.B
         for i in range(1, self.n_states):
             C = np.hstack((C, np.linalg.matrix_power(self.A, i) @ self.B))
         
-        rank = matrix_rank(C)
+        rank = np.linalg.matrix_rank(C)
         if rank < self.n_states:
             print(f"Warning: System may not be fully controllable "
                   f"(rank={rank}, expected={self.n_states})")
