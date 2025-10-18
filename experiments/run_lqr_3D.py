@@ -59,8 +59,8 @@ def get_state_from_mujoco(data):
 mujoco.mj_resetData(model, data)
 
 # Set initial state - small perturbation from upright
-theta1_abs = np.pi + np.pi/8
-theta2_abs = np.pi + np.pi/20
+theta1_abs = np.pi + .26
+theta2_abs = np.pi - 0.06
 
 # Convert to MuJoCo convention
 data.qpos[0] = 0.0  # cart at center
