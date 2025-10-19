@@ -1,12 +1,12 @@
 """
-Train PPO Level 3 (±30° perturbations) with optional transfer learning from Level 2.
+Train PPO Level 3 (±10° perturbations) with transfer learning from Level 2.
 
 Usage:
-    # Train from scratch
-    python experiments/train_ppo_level3.py
+    # Train with transfer learning from Level 2 (recommended)
+    python experiments/train_ppo_level3.py --transfer-from results/ppo_level2/best_model/best_model.zip
 
-    # Train with transfer learning from Level 2
-    python experiments/train_ppo_level3.py --transfer-from results/ppo_level2/ppo_level2_final.zip
+    # Train from scratch (not recommended)
+    python experiments/train_ppo_level3.py
 """
 import os
 import sys
@@ -20,16 +20,46 @@ from stable_baselines3.common.callbacks import CallbackList, EvalCallback
 from controllers.ppo_controller import create_ppo_env, SuccessRateCallback
 
 
-def train_level3(transfer_model_path=None, total_timesteps=500_000):
+def linear_schedule(initial_value: float, final_value: float):
     """
-    Train PPO Level 3 controller.
+    Linear learning rate schedule with warmup and decay.
 
     Args:
-        transfer_model_path: Path to Level 2 model for transfer learning (optional)
-        total_timesteps: Total training timesteps (default: 500K)
+        initial_value: Initial learning rate
+        final_value: Final learning rate
+
+    Returns:
+        Schedule function that takes progress (0-1) and returns LR
+    """
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will go from 1 (beginning) to 0 (end).
+        We want: warmup for first 10%, then linear decay.
+        """
+        progress = 1.0 - progress_remaining  # Convert to 0 (start) -> 1 (end)
+
+        warmup_fraction = 0.1
+        if progress < warmup_fraction:
+            # Linear warmup: 0 -> initial_value
+            return (progress / warmup_fraction) * initial_value
+        else:
+            # Linear decay: initial_value -> final_value
+            decay_progress = (progress - warmup_fraction) / (1.0 - warmup_fraction)
+            return initial_value + (final_value - initial_value) * decay_progress
+
+    return func
+
+
+def train_level3(transfer_model_path=None, total_timesteps=500_000):
+    """
+    Train PPO Level 3 controller (±10°).
+
+    Args:
+        transfer_model_path: Path to Level 2 model for transfer learning (required)
+        total_timesteps: Total training timesteps (default: 200K)
     """
     print("\n" + "="*70)
-    print("PPO LEVEL 3 TRAINING: ±30° Perturbations")
+    print("PPO LEVEL 3 TRAINING: ±10° Perturbations (1.67x Level 2)")
     print("="*70)
     print(f"Total timesteps: {total_timesteps:,}")
     print(f"Parallel environments: 4")
@@ -37,7 +67,8 @@ def train_level3(transfer_model_path=None, total_timesteps=500_000):
     if transfer_model_path:
         print(f"Transfer learning from: {transfer_model_path}")
     else:
-        print("Training from scratch (no transfer learning)")
+        print("⚠️  WARNING: Training from scratch not recommended!")
+        print("   Use --transfer-from for better results")
     print("="*70 + "\n")
 
     # Setup directories
@@ -55,31 +86,59 @@ def train_level3(transfer_model_path=None, total_timesteps=500_000):
     print("Creating evaluation environment...")
     eval_env = create_ppo_env(curriculum_level=3, n_envs=1, seed=999, monitor=True)
 
-    # Create or load model
+    # Transfer learning with conservative hyperparameters:
+    # 1. Lower learning rate to fine-tune without destroying Level 2 knowledge
+    # 2. Keep entropy coefficient for exploration in slightly harder environment
+    # 3. Use same batch size as Level 2 for consistency
+
     if transfer_model_path and os.path.exists(transfer_model_path):
         print(f"\n🔄 Loading Level 2 model for transfer learning...")
         print(f"   Model: {transfer_model_path}")
         model = PPO.load(transfer_model_path, env=train_env)
+
+        # Increased learning rate for better adaptation to ±10° perturbations
+        # Balanced to preserve Level 2 knowledge while allowing exploration
+        initial_lr = 1.5e-4  # Increased from 5e-5 for faster adaptation
+        final_lr = 3e-5      # Increased from 1e-5 for continued learning
+        model.learning_rate = linear_schedule(initial_lr, final_lr)
+
+        # Keep entropy coefficient for exploration
+        model.ent_coef = 0.01
+
+        # Keep batch size consistent with Level 2
+        model.batch_size = 64
+
+        print(f"   📉 LR schedule: {initial_lr:.0e} → {final_lr:.0e} (balanced)")
+        print(f"   🎲 Entropy coefficient: {model.ent_coef}")
+        print(f"   📦 Batch size: {model.batch_size}")
+        print(f"   🎯 Strategy: Gradual adaptation from ±6° to ±10°")
         print("   ✅ Model loaded successfully\n")
     else:
         print("\n🆕 Creating new PPO model...")
+        # For training from scratch, use standard LR with schedule
+        initial_lr = 3e-4
+        final_lr = 3e-5
         model = PPO(
             policy="MlpPolicy",
             env=train_env,
-            learning_rate=3e-4,
+            learning_rate=linear_schedule(initial_lr, final_lr),
             n_steps=2048,
-            batch_size=64,
+            batch_size=128,  # Increased for stability
             n_epochs=10,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.2,
-            ent_coef=0.0,
+            ent_coef=0.01,  # Start with exploration
             vf_coef=0.5,
             max_grad_norm=0.5,
             policy_kwargs={"net_arch": [64, 64]},
             verbose=1,
             tensorboard_log=results_dir,
+            seed=42,  # For reproducibility
         )
+        print(f"   📉 LR schedule: {initial_lr:.0e} → {final_lr:.0e} (10% warmup)")
+        print(f"   🎲 Entropy coefficient: {model.ent_coef}")
+        print(f"   📦 Batch size: {model.batch_size}")
         print("   ✅ Model created\n")
 
     # Setup callbacks
@@ -119,13 +178,13 @@ def train_level3(transfer_model_path=None, total_timesteps=500_000):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train PPO Level 3 (±30° perturbations)"
+        description="Train PPO Level 3 (±10° perturbations)"
     )
     parser.add_argument(
         "--transfer-from",
         type=str,
         default=None,
-        help="Path to Level 2 model for transfer learning (e.g., results/ppo_level2/ppo_level2_final.zip)",
+        help="Path to Level 2 model for transfer learning (e.g., results/ppo_level2/best_model/best_model.zip)",
     )
     parser.add_argument(
         "--timesteps",
@@ -146,6 +205,7 @@ def main():
     print("🎉 LEVEL 3 TRAINING COMPLETE!")
     print("="*70)
     print(f"\nTrained model: {model_path}")
+    print(f"Curriculum progression: Level 1 (±3°) → Level 2 (±6°) → Level 3 (±10°)")
     print("\nNext steps:")
     print("  1. Evaluate: python experiments/evaluate_ppo_level3.py")
     print("  2. Visualize: python experiments/render_ppo_level3.py")
