@@ -221,13 +221,12 @@ class DoublePendulumCartEnv(gym.Env):
         Reward function for stabilization at upright position.
         Upright equilibrium: θ₁ = π, θ₂ = π
 
-        Based on literature (PLOS ONE 2023):
-        - Primary: cos(θ) reward for angle stabilization
-        - Secondary: Cart position penalty to prevent drift
-        - Minimal angular velocity penalty for smoothness
-        - NO cart velocity penalty (needed for stabilization!)
-
-        Reference: r = cos(θ) - (x/x₀)²
+        Uses similar structure to Gymnasium's InvertedDoublePendulum-v4:
+        - Alive bonus: Encourages staying upright
+        - Angle cost: Quadratic penalty for deviation from vertical
+        - Position cost: Keep cart near center
+        - Velocity cost: Discourage excessive motion
+        - Control cost: Penalize large forces
         """
         x, theta1, theta2, dx, dtheta1, dtheta2 = obs
         # Handle both scalar and array actions (for compatibility with VecEnv)
@@ -244,32 +243,21 @@ class DoublePendulumCartEnv(gym.Env):
         theta1_error = np.arctan2(np.sin(theta1_error), np.cos(theta1_error))
         theta2_error = np.arctan2(np.sin(theta2_error), np.cos(theta2_error))
 
-        # Angle reward using cosine (literature-based approach)
-        # cos(0) = 1 when perfectly upright, cos(π) = -1 when inverted
-        angle_reward = np.cos(theta1_error) + np.cos(theta2_error)
-        # Scale to [0, 10] range: (2 to -2) -> (10 to 0)
-        angle_reward = 5.0 * (angle_reward + 2.0) / 2.0
+        # Alive bonus (like Gymnasium InvertedDoublePendulum)
+        # Give significant positive reward for staying upright
+        # This encourages the agent to keep the system stable
+        alive_bonus = 10.0
 
-        # Cart position penalty: quadratic, normalized by x_limit
-        # Scaled to be significant but not dominating angle reward
-        # At x=0: penalty=0, At x=x_limit=2.0m: penalty=2.0
-        position_penalty = 2.0 * (x / self.x_limit)**2
+        # Cost components (scaled appropriately for balance with alive bonus)
+        angle_cost = theta1_error**2 + theta2_error**2
+        position_cost = x**2
+        velocity_cost = 0.01 * (dx**2 + dtheta1**2 + dtheta2**2)
+        control_cost = 0.001 * force**2
 
-        # Angular velocity penalty: very small, only for smoothness
-        # Literature uses ~0.001 for angular velocities
-        angular_velocity_penalty = 0.001 * (dtheta1**2 + dtheta2**2)
-
-        # Control cost: small penalty for large forces
-        control_penalty = 0.001 * force**2
-
-        # NO cart velocity penalty - cart must be free to move for stabilization!
-        # The position penalty prevents unbounded drift without constraining dynamics
-
-        # Total reward
-        # Perfect upright at center: angle_reward ≈ 10, penalties ≈ 0, total ≈ +10
-        # Cart at x=1.0m: position_penalty = 0.5 (moderate)
-        # Cart at x=2.0m: position_penalty = 2.0 (significant)
-        reward = angle_reward - (position_penalty + angular_velocity_penalty + control_penalty)
+        # Total reward: alive bonus minus costs
+        # When upright and still: reward ≈ +10
+        # When falling or moving excessively: costs reduce reward
+        reward = alive_bonus - (angle_cost + 0.1 * position_cost + velocity_cost + control_cost)
 
         return reward
     
