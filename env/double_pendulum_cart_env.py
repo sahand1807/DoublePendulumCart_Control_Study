@@ -191,8 +191,11 @@ class DoublePendulumCartEnv(gym.Env):
     
     def step(self, action):
         """Execute one time step."""
-        # Scale action to force range
-        force = np.clip(action[0], -1.0, 1.0) * self.max_force
+        # Handle both scalar and array actions (for compatibility with VecEnv)
+        if np.isscalar(action):
+            force = np.clip(action, -1.0, 1.0) * self.max_force
+        else:
+            force = np.clip(action[0], -1.0, 1.0) * self.max_force
         self.data.ctrl[0] = force
         
         # Step physics simulation
@@ -217,31 +220,45 @@ class DoublePendulumCartEnv(gym.Env):
         """
         Reward function for stabilization at upright position.
         Upright equilibrium: θ₁ = π, θ₂ = π
+
+        Uses similar structure to Gymnasium's InvertedDoublePendulum-v4:
+        - Alive bonus: Encourages staying upright
+        - Angle cost: Quadratic penalty for deviation from vertical
+        - Position cost: Keep cart near center
+        - Velocity cost: Discourage excessive motion
+        - Control cost: Penalize large forces
         """
         x, theta1, theta2, dx, dtheta1, dtheta2 = obs
-        force = action[0] * self.max_force
-        
+        # Handle both scalar and array actions (for compatibility with VecEnv)
+        if np.isscalar(action):
+            force = action * self.max_force
+        else:
+            force = action[0] * self.max_force
+
         # Angle errors from upright (π)
         theta1_error = theta1 - np.pi
         theta2_error = theta2 - np.pi
-        
+
         # Wrap to [-π, π]
         theta1_error = np.arctan2(np.sin(theta1_error), np.cos(theta1_error))
         theta2_error = np.arctan2(np.sin(theta2_error), np.cos(theta2_error))
-        
-        # Cost components
+
+        # Alive bonus (like Gymnasium InvertedDoublePendulum)
+        # Give significant positive reward for staying upright
+        # This encourages the agent to keep the system stable
+        alive_bonus = 10.0
+
+        # Cost components (scaled appropriately for balance with alive bonus)
         angle_cost = theta1_error**2 + theta2_error**2
         position_cost = x**2
         velocity_cost = 0.01 * (dx**2 + dtheta1**2 + dtheta2**2)
         control_cost = 0.001 * force**2
-        
-        # Reward is negative cost
-        reward = -(angle_cost + 0.1 * position_cost + velocity_cost + control_cost)
-        
-        # Bonus for being very close to upright
-        if abs(theta1_error) < 0.1 and abs(theta2_error) < 0.1:
-            reward += 1.0
-        
+
+        # Total reward: alive bonus minus costs
+        # When upright and still: reward ≈ +10
+        # When falling or moving excessively: costs reduce reward
+        reward = alive_bonus - (angle_cost + 0.1 * position_cost + velocity_cost + control_cost)
+
         return reward
     
     def _is_terminated(self, obs):
