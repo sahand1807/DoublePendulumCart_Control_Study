@@ -22,15 +22,39 @@ def create_level3_env():
     env = CurriculumInitializationWrapper(env, curriculum_level=3)
     return env
 
-def render_episode(model, env, max_steps=1000):
+def render_episode(model, env, max_steps=1000, initial_angles=None):
     """
     Run one episode and collect frames and metrics.
+
+    Args:
+        model: Trained PPO model
+        env: Environment
+        max_steps: Maximum episode steps
+        initial_angles: Tuple of (theta1_deg, theta2_deg) in degrees for initial perturbation
+                       If None, uses random initialization
 
     Returns:
         frames: List of rendered images
         metrics: Dict with trajectory data
     """
-    obs, info = env.reset()
+    if initial_angles is not None:
+        # Set specific initial perturbations (convert degrees to radians)
+        theta1_deg, theta2_deg = initial_angles
+        theta1_rad = np.radians(theta1_deg)
+        theta2_rad = np.radians(theta2_deg)
+
+        # Initial state: upright (π) + perturbation
+        initial_state = [
+            0.0,                    # x position at center
+            np.pi + theta1_rad,     # theta1: upright + perturbation
+            np.pi + theta2_rad,     # theta2: upright + perturbation
+            0.0,                    # dx
+            0.0,                    # dtheta1
+            0.0                     # dtheta2
+        ]
+        obs, info = env.reset(options={"initial_state": initial_state})
+    else:
+        obs, info = env.reset()
 
     # Get initial state
     if 'actual_state' in info:
@@ -256,7 +280,7 @@ def main():
 
     # Model path from training (absolute path from project root)
     # Note: PPO.load() automatically adds .zip extension
-    model_path = os.path.join(project_root, 'results/ppo_level3/ppo_level3_final')
+    model_path = os.path.join(project_root, 'results/ppo_level3/best_model/best_model')
     save_dir = os.path.join(project_root, 'results/ppo_level3')
 
     print("\n" + "="*60)

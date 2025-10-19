@@ -127,7 +127,7 @@ if __name__ == '__main__':
 
     # Model path from training (absolute path from project root)
     # Note: PPO.load() automatically adds .zip extension
-    model_path = os.path.join(project_root, 'results/ppo_level3/ppo_level3_final')
+    model_path = os.path.join(project_root, 'results/ppo_level3/best_model/best_model')
     save_dir = os.path.join(project_root, 'results/ppo_level3')
 
     # Run evaluation
