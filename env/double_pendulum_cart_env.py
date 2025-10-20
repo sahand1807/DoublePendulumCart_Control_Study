@@ -30,9 +30,9 @@ class DoublePendulumCartEnv(gym.Env):
     
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
     
-    def __init__(self, render_mode=None, xml_path=None, terminate_on_fall=True):
+    def __init__(self, render_mode=None, xml_path=None, terminate_on_fall=True, max_force=20.0):
         super().__init__()
-        
+
         # Termination behavior
         self.terminate_on_fall = terminate_on_fall  # Set False for visualization
         
@@ -51,7 +51,9 @@ class DoublePendulumCartEnv(gym.Env):
             self.renderer = mujoco.Renderer(self.model, height=480, width=640)
         
         # Action space: force on cart
-        self.max_force = 20.0
+        # Default: 20.0 for stabilization
+        # Swing-up tasks should use higher values (e.g., 100.0)
+        self.max_force = max_force
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(1,), dtype=np.float32
         )
