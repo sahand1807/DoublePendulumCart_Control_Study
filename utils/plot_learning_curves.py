@@ -213,28 +213,17 @@ def plot_learning_curves(log_dir, save_dir=None, window=10):
     ax2.set_title('Episode Length vs Timesteps', fontsize=14, fontweight='bold')
     ax2.grid(True, alpha=0.3)
 
-    # ========== Plot 3: Success Rate or Clip Fraction ==========
-    if has_progress and 'rollout/success_rate' in df_progress.columns:
+    # ========== Plot 3: Entropy (Exploration) ==========
+    if has_progress and 'train/entropy_loss' in df_progress.columns:
         ax3 = fig.add_subplot(gs[0, 2])
-        timesteps = df_progress['step'].values
-        success_rate = df_progress['rollout/success_rate'].values
-        mask = ~np.isnan(success_rate)
+        timesteps = df_progress.get('time/total_timesteps', df_progress['step']).values
+        entropy = -df_progress['train/entropy_loss'].values  # Negate for positive entropy
+        mask = ~np.isnan(entropy)
 
-        ax3.plot(timesteps[mask], success_rate[mask], color='tab:orange', linewidth=2, marker='o', markersize=3)
+        ax3.plot(timesteps[mask], entropy[mask], color='tab:cyan', linewidth=2, marker='o', markersize=3)
         ax3.set_xlabel('Timesteps', fontsize=12)
-        ax3.set_ylabel('Success Rate (%)', fontsize=12)
-        ax3.set_title('Success Rate vs Timesteps', fontsize=14, fontweight='bold')
-        ax3.grid(True, alpha=0.3)
-    elif has_progress and 'train/clip_fraction' in df_progress.columns:
-        ax3 = fig.add_subplot(gs[0, 2])
-        timesteps = df_progress['step'].values
-        clip_frac = df_progress['train/clip_fraction'].values
-        mask = ~np.isnan(clip_frac)
-
-        ax3.plot(timesteps[mask], clip_frac[mask], color='tab:orange', linewidth=2, marker='o', markersize=3)
-        ax3.set_xlabel('Timesteps', fontsize=12)
-        ax3.set_ylabel('Clip Fraction', fontsize=12)
-        ax3.set_title('PPO Clip Fraction vs Timesteps', fontsize=14, fontweight='bold')
+        ax3.set_ylabel('Policy Entropy', fontsize=12)
+        ax3.set_title('Exploration (Entropy) vs Timesteps', fontsize=14, fontweight='bold')
         ax3.grid(True, alpha=0.3)
 
     # ========== Plot 4: Value Loss ==========
@@ -264,71 +253,23 @@ def plot_learning_curves(log_dir, save_dir=None, window=10):
         ax5.set_title('Actor Loss vs Timesteps', fontsize=14, fontweight='bold')
         ax5.grid(True, alpha=0.3)
 
-    # ========== Plot 6: Entropy (Exploration) ==========
-    if has_progress and 'train/entropy_loss' in df_progress.columns:
-        ax6 = fig.add_subplot(gs[1, 2])
-        timesteps = df_progress.get('time/total_timesteps', df_progress['step']).values
-        entropy = -df_progress['train/entropy_loss'].values  # Negate for positive entropy
-        mask = ~np.isnan(entropy)
-
-        ax6.plot(timesteps[mask], entropy[mask], color='tab:cyan', linewidth=2, marker='o', markersize=3)
-        ax6.set_xlabel('Timesteps', fontsize=12)
-        ax6.set_ylabel('Policy Entropy', fontsize=12)
-        ax6.set_title('Exploration (Entropy) vs Timesteps', fontsize=14, fontweight='bold')
-        ax6.grid(True, alpha=0.3)
-
-    # ========== Plot 7: KL Divergence ==========
-    if has_progress and 'train/approx_kl' in df_progress.columns:
-        ax7 = fig.add_subplot(gs[2, 0])
-        timesteps = df_progress.get('time/total_timesteps', df_progress['step']).values
-        approx_kl = df_progress['train/approx_kl'].values
-        mask = ~np.isnan(approx_kl)
-
-        ax7.plot(timesteps[mask], approx_kl[mask], color='tab:brown', linewidth=2, marker='o', markersize=3)
-        ax7.set_xlabel('Timesteps', fontsize=12)
-        ax7.set_ylabel('KL Divergence', fontsize=12)
-        ax7.set_title('Approximate KL Divergence', fontsize=14, fontweight='bold')
-        ax7.grid(True, alpha=0.3)
-
-    # ========== Plot 8: Explained Variance ==========
+    # ========== Plot 6: Explained Variance ==========
     if has_progress and 'train/explained_variance' in df_progress.columns:
-        ax8 = fig.add_subplot(gs[2, 1])
+        ax6 = fig.add_subplot(gs[1, 2])
         timesteps = df_progress.get('time/total_timesteps', df_progress['step']).values
         expl_var = df_progress['train/explained_variance'].values
         mask = ~np.isnan(expl_var)
 
-        ax8.plot(timesteps[mask], expl_var[mask], color='tab:pink', linewidth=2, marker='o', markersize=3)
-        ax8.axhline(y=1.0, color='gray', linestyle='-', linewidth=1, alpha=0.5, label='Perfect')
-        ax8.set_xlabel('Timesteps', fontsize=12)
-        ax8.set_ylabel('Explained Variance', fontsize=12)
-        ax8.set_title('Value Function Quality', fontsize=14, fontweight='bold')
-        ax8.set_ylim(0, 1.1)
-        ax8.legend()
-        ax8.grid(True, alpha=0.3)
+        ax6.plot(timesteps[mask], expl_var[mask], color='tab:pink', linewidth=2, marker='o', markersize=3)
+        ax6.axhline(y=1.0, color='gray', linestyle='-', linewidth=1, alpha=0.5, label='Perfect')
+        ax6.set_xlabel('Timesteps', fontsize=12)
+        ax6.set_ylabel('Explained Variance', fontsize=12)
+        ax6.set_title('Value Function Quality', fontsize=14, fontweight='bold')
+        ax6.set_ylim(0, 1.1)
+        ax6.legend()
+        ax6.grid(True, alpha=0.3)
 
-    # ========== Plot 9: Mean Angle Error or FPS ==========
-    if has_progress and 'rollout/mean_angle_error' in df_progress.columns:
-        ax9 = fig.add_subplot(gs[2, 2])
-        timesteps = df_progress.get('time/total_timesteps', df_progress['step']).values
-        angle_error = df_progress['rollout/mean_angle_error'].values
-        mask = ~np.isnan(angle_error)
-
-        ax9.plot(timesteps[mask], angle_error[mask], color='tab:olive', linewidth=2, marker='o', markersize=3)
-        ax9.set_xlabel('Timesteps', fontsize=12)
-        ax9.set_ylabel('Mean Angle Error (degrees)', fontsize=12)
-        ax9.set_title('Control Precision vs Timesteps', fontsize=14, fontweight='bold')
-        ax9.grid(True, alpha=0.3)
-    elif has_progress and 'time/fps' in df_progress.columns:
-        ax9 = fig.add_subplot(gs[2, 2])
-        timesteps = df_progress.get('time/total_timesteps', df_progress['step']).values
-        fps = df_progress['time/fps'].values
-        mask = ~np.isnan(fps)
-
-        ax9.plot(timesteps[mask], fps[mask], color='tab:olive', linewidth=2, marker='o', markersize=3)
-        ax9.set_xlabel('Timesteps', fontsize=12)
-        ax9.set_ylabel('FPS', fontsize=12)
-        ax9.set_title('Training Speed (FPS)', fontsize=14, fontweight='bold')
-        ax9.grid(True, alpha=0.3)
+    # Plot 7, 8, 9 removed - keeping only 6 essential plots
 
     # Add overall title
     fig.suptitle('PPO Training Learning Curves', fontsize=16, fontweight='bold', y=0.995)

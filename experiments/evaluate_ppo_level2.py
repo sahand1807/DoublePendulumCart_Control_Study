@@ -1,6 +1,6 @@
 """
 Evaluate trained PPO Level 2 model and generate plots.
-Tests the model on ±10° perturbations and visualizes performance.
+Tests the model on ±6° perturbations and visualizes performance.
 """
 # Add parent directory to path for imports when running from experiments/
 import os
@@ -14,7 +14,7 @@ from env.double_pendulum_cart_env import DoublePendulumCartEnv
 from env.angle_wrapper import AngleObservationWrapper, CurriculumInitializationWrapper
 
 def create_level2_env():
-    """Create Level 2 environment with ±10° perturbations."""
+    """Create Level 2 environment with ±6° perturbations."""
     env = DoublePendulumCartEnv()
     env = AngleObservationWrapper(env)
     env = CurriculumInitializationWrapper(env, curriculum_level=2)

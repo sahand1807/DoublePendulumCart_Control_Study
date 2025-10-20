@@ -173,16 +173,18 @@ class CurriculumInitializationWrapper(gym.Wrapper):
         Args:
             level: 1, 2, or 3
         """
-        if level not in [1, 2, 3]:
-            raise ValueError(f"Curriculum level must be 1, 2, or 3, got {level}")
+        valid_levels = [1, 2, 3]
+        if level not in valid_levels:
+            raise ValueError(f"Curriculum level must be one of {valid_levels}, got {level}")
 
         self.curriculum_level = level
 
         # Define angle perturbation ranges (in radians)
+        # Gradual curriculum progression for better learning
         self.level_configs = {
-            1: {'angle_range': np.deg2rad(3),   'name': 'Level 1 (±3°)'},
-            2: {'angle_range': np.deg2rad(10),  'name': 'Level 2 (±10°)'},
-            3: {'angle_range': np.deg2rad(30),  'name': 'Level 3 (±30°)'},
+            1:   {'angle_range': np.deg2rad(3),   'name': 'Level 1 (±3°)'},
+            2:   {'angle_range': np.deg2rad(6),   'name': 'Level 2 (±6°)'},
+            3:   {'angle_range': np.deg2rad(10),  'name': 'Level 3 (±10°)'},
         }
 
         self.angle_range = self.level_configs[level]['angle_range']

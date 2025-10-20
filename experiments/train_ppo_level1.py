@@ -47,8 +47,21 @@ def train_level1(total_timesteps=500_000):
     print("Creating evaluation environment...")
     eval_env = create_ppo_env(curriculum_level=1, n_envs=1, seed=999, monitor=True)
 
+    # Detect and use best available device (Apple M2 GPU if available)
+    import torch
+    if torch.backends.mps.is_available():
+        device = 'mps'
+        print(f"🚀 Using Apple M2 GPU (MPS) for training!")
+    elif torch.cuda.is_available():
+        device = 'cuda'
+        print(f"🚀 Using NVIDIA GPU (CUDA) for training!")
+    else:
+        device = 'cpu'
+        print(f"⚠️  Using CPU for training (slower)")
+    print()
+
     # Create model
-    print("\n🆕 Creating new PPO model...")
+    print("🆕 Creating new PPO model...")
     model = PPO(
         policy="MlpPolicy",
         env=train_env,
@@ -63,9 +76,12 @@ def train_level1(total_timesteps=500_000):
         vf_coef=0.5,
         max_grad_norm=0.5,
         policy_kwargs={"net_arch": [64, 64]},
+        device=device,  # Use M2 GPU if available!
         verbose=1,
         tensorboard_log=results_dir,
+        seed=42,  # For reproducibility
     )
+    print(f"   🖥️  Device: {device.upper()}")
     print("   ✅ Model created\n")
 
     # Setup callbacks

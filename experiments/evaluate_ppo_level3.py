@@ -1,6 +1,6 @@
 """
-Evaluate trained PPO Level 3 model and generate plots.
-Tests the model on ±30° perturbations and visualizes performance.
+Evaluate trained PPO Level 2 model and generate plots.
+Tests the model on ±6° perturbations and visualizes performance.
 """
 # Add parent directory to path for imports when running from experiments/
 import os
@@ -13,11 +13,11 @@ from stable_baselines3 import PPO
 from env.double_pendulum_cart_env import DoublePendulumCartEnv
 from env.angle_wrapper import AngleObservationWrapper, CurriculumInitializationWrapper
 
-def create_level3_env():
-    """Create Level 3 environment with ±30° perturbations."""
+def create_level2_env():
+    """Create Level 2 environment with ±6° perturbations."""
     env = DoublePendulumCartEnv()
     env = AngleObservationWrapper(env)
-    env = CurriculumInitializationWrapper(env, curriculum_level=3)
+    env = CurriculumInitializationWrapper(env, curriculum_level=2)
     return env
 
 def evaluate_model(model_path, n_episodes=100):
@@ -28,7 +28,7 @@ def evaluate_model(model_path, n_episodes=100):
     print(f"{'='*60}\n")
 
     model = PPO.load(model_path)
-    env = create_level3_env()
+    env = create_level2_env()
 
     # Storage for metrics
     all_lengths = []
@@ -100,7 +100,7 @@ def plot_results(stats, save_dir):
                 ha='center', va='bottom', fontsize=16, fontweight='bold')
 
     ax.set_ylabel('Number of Episodes', fontsize=14, fontweight='bold')
-    ax.set_title(f'PPO Level 3 Evaluation: Success vs Failure\n({n_episodes} episodes, 10 seconds each)\nSuccess = Episode Length ≥ 1900 steps',
+    ax.set_title(f'PPO Level 2 Evaluation: Success vs Failure\n({n_episodes} episodes, 10 seconds each)\nSuccess = Episode Length ≥ 1900 steps',
                  fontsize=16, fontweight='bold', pad=20)
     ax.set_ylim(0, n_episodes + 10)
     ax.grid(True, alpha=0.3, axis='y')
@@ -110,7 +110,7 @@ def plot_results(stats, save_dir):
     ax.spines['right'].set_visible(False)
 
     plt.tight_layout()
-    summary_path = os.path.join(save_dir, 'level3_evaluation.png')
+    summary_path = os.path.join(save_dir, 'level2_evaluation.png')
     plt.savefig(summary_path, dpi=150, bbox_inches='tight')
     print(f"\nEvaluation plot saved to: {summary_path}")
     plt.close()

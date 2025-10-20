@@ -114,7 +114,20 @@ def train_level3(transfer_model_path=None, total_timesteps=500_000):
         print(f"   🎯 Strategy: Gradual adaptation from ±6° to ±10°")
         print("   ✅ Model loaded successfully\n")
     else:
-        print("\n🆕 Creating new PPO model...")
+        # Detect and use best available device (Apple M2 GPU if available)
+        import torch
+        if torch.backends.mps.is_available():
+            device = 'mps'
+            print(f"🚀 Using Apple M2 GPU (MPS) for training!")
+        elif torch.cuda.is_available():
+            device = 'cuda'
+            print(f"🚀 Using NVIDIA GPU (CUDA) for training!")
+        else:
+            device = 'cpu'
+            print(f"⚠️  Using CPU for training (slower)")
+        print()
+
+        print("🆕 Creating new PPO model...")
         # For training from scratch, use standard LR with schedule
         initial_lr = 3e-4
         final_lr = 3e-5
@@ -132,10 +145,12 @@ def train_level3(transfer_model_path=None, total_timesteps=500_000):
             vf_coef=0.5,
             max_grad_norm=0.5,
             policy_kwargs={"net_arch": [64, 64]},
+            device=device,  # Use M2 GPU if available!
             verbose=1,
             tensorboard_log=results_dir,
             seed=42,  # For reproducibility
         )
+        print(f"   🖥️  Device: {device.upper()}")
         print(f"   📉 LR schedule: {initial_lr:.0e} → {final_lr:.0e} (10% warmup)")
         print(f"   🎲 Entropy coefficient: {model.ent_coef}")
         print(f"   📦 Batch size: {model.batch_size}")

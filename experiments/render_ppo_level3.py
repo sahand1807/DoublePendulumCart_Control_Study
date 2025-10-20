@@ -1,6 +1,6 @@
 """
 Render trained PPO Level 3 model and create animated visualization.
-Shows the controller stabilizing the double pendulum from ±30° perturbations.
+Shows the controller stabilizing the double pendulum from ±10° perturbations.
 """
 # Add parent directory to path for imports when running from experiments/
 import os
@@ -16,42 +16,29 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 def create_level3_env():
-    """Create Level 3 environment with ±30° perturbations."""
+    """Create Level 3 environment with ±10° perturbations."""
     env = DoublePendulumCartEnv()
     env = AngleObservationWrapper(env)
     env = CurriculumInitializationWrapper(env, curriculum_level=3)
     return env
 
-def render_episode(model, env, max_steps=1000, initial_angles=None):
+def render_episode(model, env, max_steps=1000, initial_state=None):
     """
     Run one episode and collect frames and metrics.
 
     Args:
         model: Trained PPO model
-        env: Environment
+        env: Environment (should NOT have CurriculumInitializationWrapper if using initial_state)
         max_steps: Maximum episode steps
-        initial_angles: Tuple of (theta1_deg, theta2_deg) in degrees for initial perturbation
-                       If None, uses random initialization
+        initial_state: Complete initial state [x, theta1, theta2, dx, dtheta1, dtheta2]
+                      Angles in radians. If None, uses random initialization.
 
     Returns:
         frames: List of rendered images
         metrics: Dict with trajectory data
     """
-    if initial_angles is not None:
-        # Set specific initial perturbations (convert degrees to radians)
-        theta1_deg, theta2_deg = initial_angles
-        theta1_rad = np.radians(theta1_deg)
-        theta2_rad = np.radians(theta2_deg)
-
-        # Initial state: upright (π) + perturbation
-        initial_state = [
-            0.0,                    # x position at center
-            np.pi + theta1_rad,     # theta1: upright + perturbation
-            np.pi + theta2_rad,     # theta2: upright + perturbation
-            0.0,                    # dx
-            0.0,                    # dtheta1
-            0.0                     # dtheta2
-        ]
+    if initial_state is not None:
+        # Set specific initial state directly
         obs, info = env.reset(options={"initial_state": initial_state})
     else:
         obs, info = env.reset()
@@ -82,11 +69,11 @@ def render_episode(model, env, max_steps=1000, initial_angles=None):
     camera = mujoco.MjvCamera()
     mujoco.mjv_defaultFreeCamera(env.unwrapped.model, camera)
 
-    # Zoom in on the cart and pendulum
+    # Camera view of the cart and pendulum
     camera.lookat[0] = 0.0   # x: center on cart
     camera.lookat[1] = 0.0   # y: center
     camera.lookat[2] = 1.0   # z: look at middle height
-    camera.distance = 2.5    # Zoom in (reduced from default ~4-5)
+    camera.distance = 3.5    # Zoomed out to see more motion
     camera.elevation = -10   # Slightly below horizontal
     camera.azimuth = 90      # Side view
 
@@ -177,11 +164,11 @@ def create_animation(frames, metrics, save_path):
     # Angle errors plot
     line_theta1, = ax_angles.plot([], [], 'b-', label='θ₁ error', linewidth=2)
     line_theta2, = ax_angles.plot([], [], 'r-', label='θ₂ error', linewidth=2)
-    ax_angles.axhline(y=3, color='k', linestyle='--', alpha=0.3, linewidth=1)
-    ax_angles.axhline(y=-3, color='k', linestyle='--', alpha=0.3, linewidth=1)
+    ax_angles.axhline(y=10, color='k', linestyle='--', alpha=0.3, linewidth=1)
+    ax_angles.axhline(y=-10, color='k', linestyle='--', alpha=0.3, linewidth=1)
     ax_angles.axhline(y=0, color='k', linestyle='-', alpha=0.2, linewidth=1)
     ax_angles.set_xlim(0, time[-1])
-    ax_angles.set_ylim(-10, 10)
+    ax_angles.set_ylim(-20, 20)
     ax_angles.set_xlabel('Time (s)', fontsize=10)
     ax_angles.set_ylabel('Angle Error (deg)', fontsize=10)
     ax_angles.set_title('Angle Stabilization', fontsize=12)
@@ -240,7 +227,7 @@ def create_animation(frames, metrics, save_path):
         rms_error = np.sqrt(current_theta1_err**2 + current_theta2_err**2)
 
         text_str = f"""
-LEVEL 1: ±30° Perturbations
+LEVEL 3: ±10° Perturbations
 
 Time: {current_time:.2f}s
 Steps: {step_idx}
@@ -278,16 +265,72 @@ def main():
     project_root = os.path.dirname(script_dir)
     sys.path.insert(0, project_root)
 
-    # Model path from training (absolute path from project root)
-    # Note: PPO.load() automatically adds .zip extension
-    model_path = os.path.join(project_root, 'results/ppo_level3/best_model/best_model')
-    save_dir = os.path.join(project_root, 'results/ppo_level3')
+    # ============================================================================
+    # CONFIGURATION - Change these values to set initial conditions
+    # ============================================================================
+
+    # INITIAL STATE: Set the complete initial state [x, theta1, theta2, dx, dtheta1, dtheta2]
+    # Angles are in DEGREES for convenience, velocities in standard units
+    # Set to None for random initialization based on curriculum level
+    #
+    # Quick setup - just set the angles (assumes zero position and velocities):
+    THETA1_INIT_DEG = 9.0   # First pendulum angle (degrees from upright)
+    THETA2_INIT_DEG = -7.5    # Second pendulum angle (degrees from upright)
+    X_INIT = 0.0            # Cart position (meters)
+    DX_INIT = 0.0           # Cart velocity (m/s)
+    DTHETA1_INIT = 0.0      # First pendulum angular velocity (rad/s)
+    DTHETA2_INIT = 0.0      # Second pendulum angular velocity (rad/s)
+
+    # Set to None to use random initialization
+    USE_CUSTOM_INITIAL_STATE = True  # Set to False for random initialization
+
+    # Examples of initial conditions to try (Level 3: ±10°):
+    # - (-8.0, 8.0): Near boundary of Level 3 (±10°)
+    # - (5.0, -5.0): Moderate perturbation
+    # - (0.0, 0.0): Perfect upright (no perturbation)
+    # - (-10.0, 10.0): Maximum Level 3 perturbation
+    # - (15.0, -15.0): Beyond Level 3 range (testing robustness)
+
+    # Model to load (change for different curriculum levels)
+    MODEL_PATH = 'results/ppo_level3/best_model/best_model'
+
+    # Output directory for animation
+    OUTPUT_DIR = 'results/ppo_level3'
+    OUTPUT_FILENAME = 'level3_animation.gif'
+
+    # Simulation parameters
+    MAX_STEPS = 1000
+    CURRICULUM_LEVEL = 3  # Only used if USE_CUSTOM_INITIAL_STATE = False
+
+    # ============================================================================
+
+    # Build initial state if custom state is requested
+    if USE_CUSTOM_INITIAL_STATE:
+        # Convert angles from degrees to radians
+        # Upright is at π, so perturbation is π + angle_in_radians
+        theta1_init_rad = np.pi + np.radians(THETA1_INIT_DEG)
+        theta2_init_rad = np.pi + np.radians(THETA2_INIT_DEG)
+
+        initial_state = np.array([
+            X_INIT,
+            theta1_init_rad,
+            theta2_init_rad,
+            DX_INIT,
+            DTHETA1_INIT,
+            DTHETA2_INIT
+        ])
+    else:
+        initial_state = None
+
+    # Build full paths
+    model_path = os.path.join(project_root, MODEL_PATH)
+    save_dir = os.path.join(project_root, OUTPUT_DIR)
+    save_path = os.path.join(save_dir, OUTPUT_FILENAME)
 
     print("\n" + "="*60)
-    print("PPO Level 3 Controller - Rendering Visualization")
+    print("PPO Controller - Rendering Visualization")
     print("="*60)
     print("\nTask: Stabilize double inverted pendulum on cart")
-    print("Level 3: ±30° initial perturbations")
     print("Control: Horizontal force on cart")
     print("="*60)
 
@@ -296,16 +339,29 @@ def main():
     model = PPO.load(model_path)
 
     # Create environment
-    env = create_level3_env()
+    # NOTE: We don't use CurriculumInitializationWrapper when setting custom initial state
+    # because it would override our custom state
+    env = DoublePendulumCartEnv()
+    env = AngleObservationWrapper(env)
 
-    # Render episode (10 seconds at 100 Hz = 1000 steps)
-    print("\nRendering episode...")
-    frames, metrics = render_episode(model, env, max_steps=1000)
+    if not USE_CUSTOM_INITIAL_STATE:
+        # Only add curriculum wrapper if using random initialization
+        env = CurriculumInitializationWrapper(env, curriculum_level=CURRICULUM_LEVEL)
+        print(f"Creating Level {CURRICULUM_LEVEL} environment (random initialization)...")
+    else:
+        print(f"Using custom initial state:")
+        print(f"  Cart: x = {X_INIT:.2f} m, dx = {DX_INIT:.2f} m/s")
+        print(f"  Pendulum 1: θ₁ = {THETA1_INIT_DEG:+.1f}°, ω₁ = {DTHETA1_INIT:.2f} rad/s")
+        print(f"  Pendulum 2: θ₂ = {THETA2_INIT_DEG:+.1f}°, ω₂ = {DTHETA2_INIT:.2f} rad/s")
+
+    # Render episode
+    print(f"\nRendering episode (max {MAX_STEPS} steps)...")
+    frames, metrics = render_episode(model, env, max_steps=MAX_STEPS,
+                                     initial_state=initial_state)
 
     env.close()
 
     # Create animation
-    save_path = f"{save_dir}/level3_animation.gif"
     create_animation(frames, metrics, save_path)
 
     print("\n" + "="*60)

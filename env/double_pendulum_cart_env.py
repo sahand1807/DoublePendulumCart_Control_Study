@@ -60,7 +60,11 @@ class DoublePendulumCartEnv(gym.Env):
         
         # Observation space: [x, θ₁, θ₂, ẋ, θ̇₁, θ̇₂]
         # Angles are absolute, so range is [0, 2π] but we allow wrapping
-        self.x_limit = 2.0
+        # Extract cart limit from MuJoCo model (slider joint range)
+        slider_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'slider')
+        slider_range = self.model.jnt_range[slider_id]
+        self.x_limit = float(abs(slider_range[1]))  # Assumes symmetric range [-x, +x]
+
         self.x_vel_limit = 5.0
         self.theta_vel_limit = 4 * np.pi
         
@@ -88,24 +92,31 @@ class DoublePendulumCartEnv(gym.Env):
     def _mujoco_to_absolute_angles(self, qpos_mujoco):
         """
         Convert MuJoCo angles (relative) to absolute angles from vertical.
-        
+
         MuJoCo convention:
         - qpos[1] = θ₁ (absolute angle of pole1 from vertical)
         - qpos[2] = θ₂_rel (angle of pole2 relative to pole1)
-        
+
         Our convention (from derivation):
         - θ₁ (absolute angle of pole1 from vertical)
         - θ₂ (absolute angle of pole2 from vertical)
-        
+
         Conversion: θ₂_abs = θ₁ + θ₂_rel
+
+        IMPORTANT: Angles are wrapped to [-π, π] to prevent accumulation.
         """
         x = qpos_mujoco[0]
         theta1_abs = qpos_mujoco[1]
         theta2_rel = qpos_mujoco[2]
-        
+
         # Convert to absolute angle
         theta2_abs = theta1_abs + theta2_rel
-        
+
+        # Wrap angles to [-π, π] to prevent unbounded accumulation
+        # This is critical for energy calculations and observations
+        theta1_abs = np.arctan2(np.sin(theta1_abs), np.cos(theta1_abs))
+        theta2_abs = np.arctan2(np.sin(theta2_abs), np.cos(theta2_abs))
+
         return x, theta1_abs, theta2_abs
     
     def _absolute_to_mujoco_angles(self, x, theta1_abs, theta2_abs):
@@ -136,13 +147,21 @@ class DoublePendulumCartEnv(gym.Env):
         return obs
     
     def _get_info(self):
-        """Additional information for logging."""
+        """
+        Additional information for logging.
+
+        IMPORTANT: MuJoCo geometry convention:
+        - θ=0: UPRIGHT (rods point +z, gravity is -z)
+        - θ=π: HANGING DOWN
+
+        For swing-up task: start at θ=π (hanging), goal is θ=0 (upright)
+        """
         obs = self._get_obs()
         return {
             "cart_position": obs[0],
             "pole1_angle": obs[1],
             "pole2_angle": obs[2],
-            "upright_error": np.abs(obs[1] - np.pi) + np.abs(obs[2] - np.pi)
+            "upright_error": np.abs(obs[1]) + np.abs(obs[2])  # Distance from θ=0 (upright)
         }
     
     def reset(self, seed=None, options=None):
@@ -170,16 +189,17 @@ class DoublePendulumCartEnv(gym.Env):
             dtheta2_rel = dtheta2_abs - dtheta1
             self.data.qvel[:] = [dx, dtheta1, dtheta2_rel]
         else:
-            # Random initialization near upright (π, π)
+            # Random initialization near upright (θ=0, 0 in MuJoCo geometry)
+            # IMPORTANT: MuJoCo has θ=0 as upright (rods point +z, gravity -z)
             self.data.qpos[0] = self.np_random.uniform(-0.1, 0.1)  # x
-            theta1 = np.pi + self.np_random.uniform(-0.1, 0.1)
-            theta2 = np.pi + self.np_random.uniform(-0.1, 0.1)
-            
+            theta1 = self.np_random.uniform(-0.1, 0.1)  # Near θ=0 (upright)
+            theta2 = self.np_random.uniform(-0.1, 0.1)  # Near θ=0 (upright)
+
             # Convert to MuJoCo
             self.data.qpos[:] = self._absolute_to_mujoco_angles(
                 self.data.qpos[0], theta1, theta2
             )
-            
+
             self.data.qvel[:] = self.np_random.uniform(-0.05, 0.05, size=3)
         
         mujoco.mj_forward(self.model, self.data)
@@ -221,7 +241,12 @@ class DoublePendulumCartEnv(gym.Env):
     def _compute_reward(self, obs, action):
         """
         LQR-inspired reward function for stabilization with minimal cart oscillation.
-        Upright equilibrium: θ₁ = π, θ₂ = π
+
+        IMPORTANT: MuJoCo geometry convention:
+        - θ=0: UPRIGHT equilibrium (rods point +z, gravity is -z)
+        - θ=π: HANGING DOWN
+
+        Upright equilibrium: θ₁ = 0, θ₂ = 0
 
         Priority structure matching LQR Q matrix:
         - Angles (highest priority): ~100 weight
@@ -238,9 +263,9 @@ class DoublePendulumCartEnv(gym.Env):
         else:
             force = action[0] * self.max_force
 
-        # Angle errors from upright (π)
-        theta1_error = theta1 - np.pi
-        theta2_error = theta2 - np.pi
+        # Angle errors from upright (θ=0 in MuJoCo geometry)
+        theta1_error = theta1  # Distance from 0
+        theta2_error = theta2
 
         # Wrap to [-π, π]
         theta1_error = np.arctan2(np.sin(theta1_error), np.cos(theta1_error))
@@ -276,25 +301,36 @@ class DoublePendulumCartEnv(gym.Env):
         return reward
     
     def _is_terminated(self, obs):
-        """Check if episode should terminate."""
+        """
+        Check if episode should terminate.
+
+        IMPORTANT: MuJoCo geometry convention:
+        - θ=0: UPRIGHT (rods point +z)
+        - θ=π: HANGING DOWN
+
+        For stabilization tasks, we want to stay near θ=0 (upright).
+        For swing-up tasks, terminate_on_fall should be False.
+        """
         x, theta1, theta2 = obs[0], obs[1], obs[2]
-        
+
         # Always terminate if cart goes out of bounds
         if abs(x) > self.x_limit:
             return True
-        
-        # Optionally terminate on large angle deviations (for control tasks)
+
+        # Optionally terminate on large angle deviations (for stabilization tasks)
         if self.terminate_on_fall:
-            theta1_error = abs(theta1 - np.pi)
-            theta2_error = abs(theta2 - np.pi)
-            
+            # Distance from upright (θ=0)
+            theta1_error = abs(theta1)
+            theta2_error = abs(theta2)
+
             # Wrap errors to [0, π]
             theta1_error = min(theta1_error, 2*np.pi - theta1_error)
             theta2_error = min(theta2_error, 2*np.pi - theta2_error)
-            
+
+            # Terminate if more than 90° from upright (fallen)
             if theta1_error > np.pi/2 or theta2_error > np.pi/2:
                 return True
-        
+
         return False
     
     def render(self):
