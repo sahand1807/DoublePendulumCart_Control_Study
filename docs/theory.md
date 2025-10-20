@@ -477,8 +477,292 @@ To evaluate the LQR controller, we use the following metrics:
 4. **Computation time**: Time per control step (should be < 1 ms for real-time feasibility)
 5. **Success rate**: Percentage of initial conditions that converge to equilibrium
 
+---
 
+## 6. Proximal Policy Optimization (PPO)
 
+### 6.1 Problem Formulation
+
+PPO is a **model-free** reinforcement learning algorithm that learns a control policy directly from interaction with the environment, without requiring knowledge of the system dynamics.
+
+**Markov Decision Process (MDP)**:
+
+The control problem is formulated as an MDP with:
+- **State space** \( \mathcal{S} \): transformed observation space (8D with sin/cos encoding)
+- **Action space** \( \mathcal{A} \): continuous force \( u \in [-1, 1] \) (normalized)
+- **Reward function** \( r(s, a) \): LQR-inspired reward encouraging upright stabilization
+- **Transition dynamics** \( p(s'|s, a) \): physics simulation (MuJoCo)
+- **Discount factor** \( \gamma = 0.99 \)
+
+**Objective**: Learn a stochastic policy \( \pi_\theta(a|s) \) (parameterized by neural network weights \( \theta \)) that maximizes expected cumulative reward:
+
+$$
+J(\theta) = \mathbb{E}_{\pi_\theta}\left[ \sum_{t=0}^{\infty} \gamma^t r(s_t, a_t) \right]
+$$
+
+---
+
+### 6.2 Sin/Cos Angle Encoding
+
+**Motivation**: Neural networks struggle with periodic angle representations due to discontinuities at \( \pm\pi \).
+
+**Original state**:
+$$
+s = [x, \theta_1, \theta_2, \dot{x}, \dot{\theta}_1, \dot{\theta}_2] \quad \in \mathbb{R}^6
+$$
+
+**Encoded observation** (input to neural network):
+$$
+o = [x, \sin\theta_1, \cos\theta_1, \sin\theta_2, \cos\theta_2, \dot{x}, \dot{\theta}_1, \dot{\theta}_2] \quad \in \mathbb{R}^8
+$$
+
+**Benefits**:
+1. **Continuity**: \( \sin(\theta) \) and \( \cos(\theta) \) are continuous everywhere
+2. **Boundedness**: Values in \( [-1, 1] \) improve neural network training
+3. **Uniqueness**: Both \( \sin \) and \( \cos \) needed to uniquely identify angle in \( [0, 2\pi] \)
+4. **Smooth gradients**: Enables effective backpropagation
+
+---
+
+### 6.3 PPO Algorithm
+
+PPO improves upon vanilla policy gradient methods by constraining policy updates to avoid destructively large changes.
+
+**Clipped Surrogate Objective**:
+
+$$
+L^{CLIP}(\theta) = \mathbb{E}_t \left[ \min\left( r_t(\theta) \hat{A}_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) \hat{A}_t \right) \right]
+$$
+
+where:
+- \( r_t(\theta) = \frac{\pi_\theta(a_t|s_t)}{\pi_{\theta_{old}}(a_t|s_t)} \) is the **importance sampling ratio**
+- \( \hat{A}_t \) is the **advantage estimate** (computed via GAE)
+- \( \epsilon = 0.2 \) is the **clip range**
+
+**Interpretation**:
+- If advantage \( \hat{A}_t > 0 \) (action better than average): increase probability
+- If advantage \( \hat{A}_t < 0 \) (action worse than average): decrease probability
+- Clipping prevents too large updates when \( r_t(\theta) \) deviates significantly from 1
+
+---
+
+### 6.4 Generalized Advantage Estimation (GAE)
+
+The advantage function measures how much better an action is compared to the average:
+
+$$
+A^{\pi}(s_t, a_t) = Q^{\pi}(s_t, a_t) - V^{\pi}(s_t)
+$$
+
+**GAE** computes an exponentially-weighted average of \( n \)-step advantages:
+
+$$
+\hat{A}_t^{GAE(\gamma, \lambda)} = \sum_{l=0}^{\infty} (\gamma \lambda)^l \delta_{t+l}
+$$
+
+where \( \delta_t = r_t + \gamma V(s_{t+1}) - V(s_t) \) is the **TD error**.
+
+**Parameters** (used in this study):
+- \( \gamma = 0.99 \): discount factor (long-term vs. short-term rewards)
+- \( \lambda = 0.95 \): bias-variance tradeoff
+  - \( \lambda = 0 \): low variance, high bias (1-step TD)
+  - \( \lambda = 1 \): high variance, low bias (Monte Carlo)
+
+---
+
+### 6.5 Neural Network Policy
+
+The policy is represented as a **Gaussian distribution** with learned mean and standard deviation:
+
+$$
+\pi_\theta(a|s) = \mathcal{N}(\mu_\theta(s), \sigma_\theta(s))
+$$
+
+**Network Architecture**:
+
+```
+Input (8D): [x, sin(θ₁), cos(θ₁), sin(θ₂), cos(θ₂), ẋ, θ̇₁, θ̇₂]
+    ↓
+Hidden Layer 1: 64 neurons, tanh activation
+    ↓
+Hidden Layer 2: 64 neurons, tanh activation
+    ↓
+Output: μ(a) (mean action) and log(σ) (log standard deviation)
+```
+
+**Total Parameters**: ~5,700
+
+**Value Network**: Same architecture, outputs \( V(s) \in \mathbb{R} \)
+
+During training, actions are sampled from \( \pi_\theta(a|s) \). At test time, deterministic policy is used: \( a = \mu_\theta(s) \).
+
+---
+
+### 6.6 Reward Function
+
+**LQR-Inspired Reward Structure**:
+
+$$
+r(s, a) = r_{alive} - \left( c_\theta (\theta_1^2 + \theta_2^2) + c_x x^2 + c_{\dot{\theta}} (\dot{\theta}_1^2 + \dot{\theta}_2^2) + c_{\dot{x}} \dot{x}^2 + c_u u^2 \right)
+$$
+
+**Coefficients** (matching LQR priority structure):
+- \( r_{alive} = 10.0 \): alive bonus (encourages episode survival)
+- \( c_\theta = 1.0 \): angle error penalty (highest priority)
+- \( c_x = 0.5 \): cart position penalty
+- \( c_{\dot{\theta}} = 0.1 \): angular velocity penalty
+- \( c_{\dot{x}} = 0.01 \): cart velocity penalty
+- \( c_u = 0.001 \): control effort penalty
+
+**Note**: Angles are wrapped to \( [-\pi, \pi] \) before computing squared error, and **θ = 0** represents upright (MuJoCo geometry).
+
+**Design Rationale**:
+1. **Dense rewards**: Continuous feedback at every timestep (vs. sparse binary success/fail)
+2. **Alive bonus**: Prevents early termination, encourages longer episodes
+3. **Balanced priorities**: Angles > position > velocities > control effort
+4. **Smooth gradients**: Differentiable reward enables policy gradient learning
+
+---
+
+### 6.7 Curriculum Learning
+
+**Problem**: Training directly on large perturbations (±10°) often fails to converge due to:
+1. Exploration difficulty (vast state space)
+2. Sparse rewards (hard to stumble upon successful behaviors)
+3. Instability (poor initial policy causes environment divergence)
+
+**Solution**: Progressive curriculum with transfer learning
+
+**Curriculum Levels**:
+
+| Level | Perturbation Range | Training | Transfer From | Timesteps |
+|-------|-------------------|----------|---------------|-----------|
+| **Level 1** | \( \theta_1, \theta_2 \in [\pi \pm 3°] \) | From scratch | None | 500,000 |
+| **Level 2** | \( \theta_1, \theta_2 \in [\pi \pm 6°] \) | Transfer | Level 1 | 200,000 |
+| **Level 3** | \( \theta_1, \theta_2 \in [\pi \pm 10°] \) | Transfer | Level 2 | 500,000 |
+
+**Transfer Learning Process**:
+1. Load weights from previous level
+2. Reduce learning rate: \( 1.5 \times 10^{-4} \to 3 \times 10^{-5} \) (linear decay with 10% warmup)
+3. Add small entropy bonus: \( c_{ent} = 0.01 \) (encourage exploration)
+4. Train on harder initial conditions
+
+**Benefits**:
+- **5× speedup** for Level 2 (converges in 200K vs. ~1M timesteps from scratch)
+- **Stable learning**: gradual difficulty increase prevents policy collapse
+- **Knowledge reuse**: basic balancing skills transfer across levels
+
+---
+
+### 6.8 Training Algorithm
+
+**PPO Training Loop**:
+
+```
+Initialize policy π_θ and value function V_φ
+for iteration = 1, 2, ..., N do:
+    // Collect experience
+    for t = 1, 2, ..., T do:
+        Sample action: a_t ~ π_θ(·|s_t)
+        Execute action, observe: s_{t+1}, r_t
+        Store transition: (s_t, a_t, r_t, s_{t+1})
+    end for
+
+    // Compute advantages using GAE
+    Compute A^GAE_t for all timesteps
+
+    // Update policy (multiple epochs)
+    for epoch = 1, 2, ..., K do:
+        for minibatch in data do:
+            Compute L^CLIP + c_1 L^VF - c_2 S[π_θ]
+            Update θ via gradient ascent
+        end for
+    end for
+end for
+```
+
+**Hyperparameters** (this study):
+- Rollout length \( T = 2048 \) steps per environment
+- Minibatch size = 64
+- Optimization epochs \( K = 10 \)
+- Value function coefficient \( c_1 = 0.5 \)
+- Entropy coefficient \( c_2 = 0.0 \) (Level 1), \( 0.01 \) (Levels 2-3)
+- Parallel environments: 4
+
+---
+
+### 6.9 Implementation Details
+
+**Software Stack**:
+- **Stable-Baselines3**: PPO implementation
+- **PyTorch**: Neural network backend
+- **MuJoCo**: Physics simulation
+- **Gymnasium**: Environment interface
+
+**Hardware Acceleration**:
+- **Apple M2 GPU**: Metal Performance Shaders (MPS) backend
+- **NVIDIA CUDA**: GPU acceleration on compatible hardware
+- Training speed: ~184 FPS (M2), ~312 FPS (RTX 3080)
+
+**Reproducibility**:
+- Fixed random seeds: `seed=42` (train), `seed=999` (eval)
+- Deterministic operations where possible
+- PyTorch seed: `torch.manual_seed(42)`
+
+---
+
+### 6.10 PPO vs. LQR Comparison
+
+| Aspect | LQR | PPO |
+|--------|-----|-----|
+| **Approach** | Model-based (requires \( A, B \)) | Model-free (learns from experience) |
+| **Linearity** | Linear control law | Nonlinear neural network policy |
+| **Design** | Analytical (CARE solution) | Data-driven (gradient descent) |
+| **Training** | None (instant synthesis) | ~108 minutes (1.2M timesteps) |
+| **Computation** | ~0.05 ms/step | ~0.5 ms/step |
+| **Settling Time** | 0.41s (±8.6°/±5.7°) | 2.3s (±6°) |
+| **Region of Attraction** | ~32.5% (±30° grid) | ~95% (±10° tested) |
+| **Control Effort** | 4182 N²·s | ~940 N²·s |
+| **Robustness** | Degrades with model mismatch | Moderate to sensor noise |
+| **Interpretability** | High (gain matrix \( K \)) | Low (black-box network) |
+| **Optimality** | Optimal (for linear system) | Near-optimal (empirical) |
+
+**Use Cases**:
+- **LQR**: Small perturbations, fast response critical, model available
+- **PPO**: Large perturbations, model uncertain, wider capability needed
+
+---
+
+### 6.11 Key Insights
+
+1. **Sin/Cos Encoding is Critical**: Direct angle inputs fail to converge (<50% success), while sin/cos achieves 100% success
+
+2. **Curriculum Learning Works**: Level 2 converges 5× faster with transfer learning than training from scratch
+
+3. **LQR-Inspired Rewards Effective**: Dense, shaped rewards matching LQR priorities enable fast learning
+
+4. **Smooth Control Emerges**: Despite no explicit smoothness constraint, learned policy exhibits low control variance
+
+5. **Generalization Moderate**: Policies transfer reasonably to 1.5× training range but degrade at 2×
+
+6. **PPO Complements LQR**: PPO widens region of attraction, LQR provides faster local stabilization
+
+---
+
+### 6.12 Limitations and Extensions
+
+**Current Limitations**:
+1. **Training Cost**: 108 minutes may be impractical for rapid prototyping
+2. **Limited Range**: ±10° max (does not achieve full swing-up from ±180°)
+3. **Single Task**: Only stabilization, not trajectory tracking
+4. **Deterministic Environment**: No training with model uncertainty
+
+**Future Directions**:
+1. **Full Swing-Up**: Extend curriculum to ±180° (estimated 10M timesteps)
+2. **Robust RL**: Domain randomization with ±10% parameter uncertainty
+3. **Multi-Task**: Joint training on stabilization + trajectory tracking
+4. **Algorithm Exploration**: Compare SAC, TD3, DQN
+5. **Sim-to-Real**: Transfer to physical hardware
 
 
 
